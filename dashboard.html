@@ -277,7 +277,7 @@ function renderViz() {
 
 function isStale(pub, now) {
   for (const [key, pd] of Object.entries(pairData)) {
-    if (key.includes(pub) && (now - pd.lastSeen) < STALE_MS) return false
+    if (key.split('|').includes(pub) && (now - pd.lastSeen) < STALE_MS) return false
   }
   return true
 }
@@ -338,7 +338,7 @@ function connectWS() {
       ingest(att)
       addFeedEntry(att)
       renderViz()
-    } catch {}
+    } catch (e) { console.error('WS message error:', e) }
   }
   ws.onclose = () => { statusEl.textContent = 'disconnected'; statusEl.className = ''; setTimeout(connectWS, 3000) }
   ws.onerror = () => ws.close()
