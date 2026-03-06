@@ -39,12 +39,13 @@ function add(att) {
   while (feed.children.length > 200) feed.removeChild(feed.lastChild)
 }
 
-fetch(API + '/method/rssi?limit=50').then(r => r.json()).then(d => d.data.reverse().forEach(add)).catch(() => {})
+fetch(API + '/recent?limit=50').then(r => r.json()).then(d => d.data.reverse().forEach(add)).catch(e => console.error('Seed error:', e))
 
+let msgCount = 0
 function connect() {
   const ws = new WebSocket(API.replace(/^http/, 'ws'))
   ws.onopen = () => { status.textContent = '● live'; status.className = 'live' }
-  ws.onmessage = e => { try { add(JSON.parse(e.data)) } catch (err) { console.error('WS:', err) } }
+  ws.onmessage = e => { status.textContent = '● live — ' + (++msgCount) + ' msgs'; console.log('WS raw:', e.data); try { add(JSON.parse(e.data)) } catch (err) { console.error('WS:', err) } }
   ws.onclose = () => { status.textContent = 'disconnected — reconnecting...'; status.className = ''; setTimeout(connect, 3000) }
   ws.onerror = () => ws.close()
 }
