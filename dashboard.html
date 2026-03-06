@@ -30,8 +30,8 @@ const API = (location.hostname === 'localhost' || location.hostname === '127.0.0
 const feed = document.getElementById('feed')
 const status = document.getElementById('status')
 
-function add(att, live) {
-  const ts = live ? new Date().toLocaleTimeString('en-GB', { hour12: false }) : att.ts ? new Date(att.ts * 1000).toLocaleTimeString('en-GB', { hour12: false }) : '—'
+function add(att) {
+  const ts = new Date().toLocaleTimeString('en-GB', { hour12: false })
   const d = document.createElement('div')
   d.className = 'e'
   d.innerHTML = `<span class="t">${ts}</span> <span class="o">${att.observer.slice(0,8)}</span><span class="a"> → </span><span class="p">${att.peer.slice(0,8)}</span> <span class="v">${att.method} ${att.value}</span> <span class="x"><a href="https://whatsonchain.com/tx/${att.txid}" target="_blank">${att.txid.slice(0,10)}…</a></span>`
@@ -39,13 +39,11 @@ function add(att, live) {
   while (feed.children.length > 200) feed.removeChild(feed.lastChild)
 }
 
-fetch(API + '/method/rssi?limit=100').then(r => r.json()).then(d => d.data.reverse().forEach(a => add(a, false))).catch(e => console.error('Seed error:', e))
-
 let msgCount = 0
 function connect() {
   const ws = new WebSocket(API.replace(/^http/, 'ws'))
   ws.onopen = () => { status.textContent = '● live'; status.className = 'live' }
-  ws.onmessage = e => { status.textContent = '● live — ' + (++msgCount) + ' msgs'; try { add(JSON.parse(e.data), true) } catch (err) { console.error('WS:', err) } }
+  ws.onmessage = e => { status.textContent = '● live — ' + (++msgCount) + ' msgs'; try { add(JSON.parse(e.data)) } catch (err) { console.error('WS:', err) } }
   ws.onclose = () => { status.textContent = 'disconnected — reconnecting...'; status.className = ''; setTimeout(connect, 3000) }
   ws.onerror = () => ws.close()
 }
