@@ -2,348 +2,53 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>LOCATE1 — Live Positioning</title>
+<title>LOCATE1 — Live Feed</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: #0a0a0a; color: #e0e0e0; font-family: 'SF Mono', monospace; font-size: 13px; display: flex; height: 100vh; }
-
-  /* Left: visualization */
-  #viz { flex: 1; position: relative; }
-  #viz svg { width: 100%; height: 100%; }
-  .node-dot { fill: #0ff; }
-  .node-label { fill: #0ff; font-size: 14px; font-weight: bold; font-family: 'SF Mono', monospace; text-anchor: middle; }
-  .node-pub { fill: #555; font-size: 10px; font-family: 'SF Mono', monospace; text-anchor: middle; }
-  .edge { stroke: rgba(255,255,255,0.15); stroke-width: 1; }
-  .edge-label { fill: #555; font-size: 10px; font-family: 'SF Mono', monospace; text-anchor: middle; }
-  .node-stale .node-dot { fill: #555; }
-  .node-stale .node-label { fill: #555; }
-
-  /* Right: feed + stats */
-  #sidebar { width: 420px; border-left: 1px solid #1a1a1a; display: flex; flex-direction: column; }
-  #stats { padding: 12px 16px; border-bottom: 1px solid #1a1a1a; line-height: 1.8; }
-  .stat-label { color: #666; }
-  .stat-val { color: #0ff; }
-  #feed { flex: 1; overflow-y: auto; padding: 8px 16px; }
+  body { background: #0a0a0a; color: #e0e0e0; font-family: 'SF Mono', monospace; font-size: 13px; height: 100vh; display: flex; flex-direction: column; }
+  #feed { flex: 1; overflow-y: auto; padding: 16px 20px; }
   #feed::-webkit-scrollbar { width: 4px; }
   #feed::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
-  .entry { padding: 3px 0; border-bottom: 1px solid #111; line-height: 1.5; }
-  .ts { color: #666; }
-  .obs { color: #0ff; }
-  .arrow { color: #444; }
-  .peer { color: #f0f; }
-  .val { color: #ff0; }
-  .entry a { color: #444; text-decoration: none; }
-  .entry a:hover { color: #0f0; }
-  #status { padding: 8px 16px; border-top: 1px solid #1a1a1a; color: #444; font-size: 11px; }
+  .e { padding: 4px 0; border-bottom: 1px solid #111; line-height: 1.6; }
+  .t { color: #666; }
+  .o { color: #0ff; }
+  .a { color: #444; }
+  .p { color: #f0f; }
+  .v { color: #ff0; }
+  .x a { color: #444; text-decoration: none; }
+  .x a:hover { color: #0f0; }
+  #status { padding: 10px 20px; border-top: 1px solid #1a1a1a; color: #444; font-size: 11px; }
   #status.live { color: #0f0; }
 </style>
 </head>
 <body>
-
-<div id="viz">
-  <svg id="svg"></svg>
-</div>
-
-<div id="sidebar">
-  <div id="stats"></div>
-  <div id="feed"></div>
-  <div id="status">connecting...</div>
-</div>
-
+<div id="feed"></div>
+<div id="status">connecting...</div>
 <script>
-// --- Config ---
 const API = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
   ? 'http://localhost:3011' : 'https://locate1.axiemaid.com'
-const WS_URL = API.replace(/^http/, 'ws')
-const SAMPLES = 30
-const FEED_MAX = 200
-const REF_RSSI = -10
-const PATH_LOSS_N = 2.5
-const STALE_MS = 5 * 60 * 1000
+const feed = document.getElementById('feed')
+const status = document.getElementById('status')
 
-const NODE_LABELS = {
-  '0303339885d442d21a9642057315827d02275da49e53e36c5882038a8010f06023': 'Node A',
-  '03a00f7cad1d90d958d9173d09af24d4f6458e7ea97253d77ca7cf6603d9a1f5ad': 'Node B',
-  '0219e01ef3e945e3cfe6ad6516059ef5454e12ca72454d2f67c6346202f77f9a7f': 'Node C',
+function add(att) {
+  const ts = new Date().toLocaleTimeString('en-GB', { hour12: false })
+  const d = document.createElement('div')
+  d.className = 'e'
+  d.innerHTML = `<span class="t">${ts}</span> <span class="o">${att.observer.slice(0,8)}</span><span class="a"> → </span><span class="p">${att.peer.slice(0,8)}</span> <span class="v">${att.method} ${att.value}</span> <span class="x"><a href="https://whatsonchain.com/tx/${att.txid}" target="_blank">${att.txid.slice(0,10)}…</a></span>`
+  feed.insertBefore(d, feed.firstChild)
+  while (feed.children.length > 200) feed.removeChild(feed.lastChild)
 }
 
-// --- State ---
-let pairData = {}   // "pub1|pub2" → { rssi: [], lastSeen }
-let totalAtts = 0
+fetch(API + '/method/rssi?limit=50').then(r => r.json()).then(d => d.data.reverse().forEach(add)).catch(() => {})
 
-// --- Helpers ---
-function pairKey(a, b) { return [a, b].sort().join('|') }
-function nodeLabel(pub) { return NODE_LABELS[pub] || pub.slice(0, 8) }
-function rssiToDistance(rssi) { return Math.pow(10, (REF_RSSI - rssi) / (10 * PATH_LOSS_N)) }
-
-function trimmedMean(vals) {
-  if (!vals.length) return null
-  if (vals.length < 5) return vals.reduce((a, b) => a + b, 0) / vals.length
-  const s = [...vals].sort((a, b) => a - b)
-  const t = Math.floor(s.length * 0.1)
-  const tr = s.slice(t, s.length - t)
-  return tr.reduce((a, b) => a + b, 0) / tr.length
-}
-
-// --- Ingest attestation ---
-function ingest(att) {
-  const key = pairKey(att.observer, att.peer)
-  if (!pairData[key]) pairData[key] = { rssi: [], lastSeen: 0 }
-  pairData[key].rssi.push(att.value)
-  if (pairData[key].rssi.length > SAMPLES) pairData[key].rssi.shift()
-  pairData[key].lastSeen = att.ts ? att.ts * 1000 : Date.now()
-  totalAtts++
-}
-
-// --- Trilateration ---
-function computePositions() {
-  const pubSet = new Set()
-  const dist = {}
-  for (const [key, pd] of Object.entries(pairData)) {
-    const [a, b] = key.split('|')
-    pubSet.add(a); pubSet.add(b)
-    const avg = trimmedMean(pd.rssi)
-    if (avg !== null) dist[key] = rssiToDistance(avg)
-  }
-  const pubs = [...pubSet]
-  if (pubs.length < 2) return []
-
-  // Find best 3 with mutual pairs
-  let best3 = null, bestScore = 0
-  for (let i = 0; i < pubs.length; i++)
-    for (let j = i + 1; j < pubs.length; j++)
-      for (let k = j + 1; k < pubs.length; k++) {
-        const ab = pairKey(pubs[i], pubs[j]), ac = pairKey(pubs[i], pubs[k]), bc = pairKey(pubs[j], pubs[k])
-        if (dist[ab] && dist[ac] && dist[bc]) {
-          const sc = (pairData[ab]?.rssi.length || 0) + (pairData[ac]?.rssi.length || 0) + (pairData[bc]?.rssi.length || 0)
-          if (sc > bestScore) { bestScore = sc; best3 = [pubs[i], pubs[j], pubs[k]] }
-        }
-      }
-
-  if (!best3) {
-    // 2-node fallback
-    for (const [key, d] of Object.entries(dist)) {
-      const [a, b] = key.split('|')
-      return [{ pub: a, x: 0, y: 0 }, { pub: b, x: d, y: 0 }]
-    }
-    return []
-  }
-
-  const [A, B, C] = best3
-  const dAB = dist[pairKey(A, B)], dAC = dist[pairKey(A, C)], dBC = dist[pairKey(B, C)]
-  const bx = dAB
-  const cx = (dAC * dAC - dBC * dBC + bx * bx) / (2 * bx)
-  const cyS = dAC * dAC - cx * cx
-  let cy, lowConfidence = false
-  if (cyS > 0) {
-    cy = Math.sqrt(cyS)
-  } else {
-    cy = dAB * 0.01  // minimum 1% of dAB so triangle is visible
-    lowConfidence = true
-  }
-
-  const placed = [
-    { pub: A, x: 0, y: 0, lowConf: false },
-    { pub: B, x: bx, y: 0, lowConf: false },
-    { pub: C, x: cx, y: cy, lowConf: lowConfidence }
-  ]
-
-  // Additional nodes via gradient descent
-  const remaining = pubs.filter(p => !best3.includes(p))
-  for (const pub of remaining) {
-    const anchors = []
-    for (const pl of placed) {
-      const k = pairKey(pub, pl.pub)
-      if (dist[k]) anchors.push({ x: pl.x, y: pl.y, d: dist[k] })
-    }
-    if (anchors.length < 2) continue
-    let x = anchors.reduce((s, a) => s + a.x, 0) / anchors.length
-    let y = anchors.reduce((s, a) => s + a.y, 0) / anchors.length
-    for (let it = 0; it < 200; it++) {
-      let gx = 0, gy = 0
-      for (const a of anchors) {
-        const dx = x - a.x, dy = y - a.y
-        const act = Math.sqrt(dx * dx + dy * dy) || 0.001
-        const err = act - a.d
-        gx += err * dx / act; gy += err * dy / act
-      }
-      const lr = 0.1 / (1 + it * 0.01)
-      x -= lr * gx; y -= lr * gy
-    }
-    placed.push({ pub, x, y })
-  }
-
-  return placed
-}
-
-// --- SVG Rendering (called on data change) ---
-const svg = document.getElementById('svg')
-const SVGNS = 'http://www.w3.org/2000/svg'
-
-function renderViz() {
-  const positions = computePositions()
-  svg.innerHTML = ''
-  if (positions.length < 2) {
-    const t = document.createElementNS(SVGNS, 'text')
-    t.setAttribute('x', '50%'); t.setAttribute('y', '50%')
-    t.setAttribute('text-anchor', 'middle'); t.setAttribute('fill', '#333')
-    t.setAttribute('font-size', '16'); t.setAttribute('font-family', 'SF Mono, monospace')
-    t.textContent = 'waiting for chain data...'
-    svg.appendChild(t)
-    return
-  }
-
-  const rect = svg.getBoundingClientRect()
-  const W = rect.width, H = rect.height
-  const pad = 100
-
-  const xs = positions.map(p => p.x), ys = positions.map(p => p.y)
-  const minX = Math.min(...xs), maxX = Math.max(...xs)
-  const minY = Math.min(...ys), maxY = Math.max(...ys)
-  const rX = maxX - minX || 1, rY = maxY - minY || 1
-  const scale = Math.min((W - pad * 2) / rX, (H - pad * 2) / rY)
-  const oX = (W - rX * scale) / 2, oY = (H - rY * scale) / 2
-
-  function tx(x) { return oX + (x - minX) * scale }
-  function ty(y) { return H - (oY + (y - minY) * scale) }
-
-  const now = Date.now()
-
-  // Edges
-  for (let i = 0; i < positions.length; i++) {
-    for (let j = i + 1; j < positions.length; j++) {
-      const key = pairKey(positions[i].pub, positions[j].pub)
-      const pd = pairData[key]
-      if (!pd) continue
-      const avg = trimmedMean(pd.rssi)
-      if (avg === null) continue
-
-      const x1 = tx(positions[i].x), y1 = ty(positions[i].y)
-      const x2 = tx(positions[j].x), y2 = ty(positions[j].y)
-
-      const line = document.createElementNS(SVGNS, 'line')
-      line.setAttribute('x1', x1); line.setAttribute('y1', y1)
-      line.setAttribute('x2', x2); line.setAttribute('y2', y2)
-      line.setAttribute('class', 'edge')
-      svg.appendChild(line)
-
-      const lbl = document.createElementNS(SVGNS, 'text')
-      lbl.setAttribute('x', (x1 + x2) / 2); lbl.setAttribute('y', (y1 + y2) / 2 - 8)
-      lbl.setAttribute('class', 'edge-label')
-      lbl.textContent = avg.toFixed(0) + ' dBm'
-      svg.appendChild(lbl)
-    }
-  }
-
-  // Nodes
-  for (const p of positions) {
-    const sx = tx(p.x), sy = ty(p.y)
-    const stale = isStale(p.pub, now)
-    const g = document.createElementNS(SVGNS, 'g')
-    if (stale) g.setAttribute('class', 'node-stale')
-
-    const circle = document.createElementNS(SVGNS, 'circle')
-    circle.setAttribute('cx', sx); circle.setAttribute('cy', sy); circle.setAttribute('r', 6)
-    circle.setAttribute('class', 'node-dot')
-    g.appendChild(circle)
-
-    const label = document.createElementNS(SVGNS, 'text')
-    label.setAttribute('x', sx); label.setAttribute('y', sy - 18)
-    label.setAttribute('class', 'node-label')
-    label.textContent = nodeLabel(p.pub)
-    g.appendChild(label)
-
-    const pub = document.createElementNS(SVGNS, 'text')
-    pub.setAttribute('x', sx); pub.setAttribute('y', sy + 22)
-    pub.setAttribute('class', 'node-pub')
-    pub.textContent = p.pub.slice(0, 8) + '…' + p.pub.slice(-6)
-    g.appendChild(pub)
-
-    if (p.lowConf) {
-      const warn = document.createElementNS(SVGNS, 'text')
-      warn.setAttribute('x', sx); warn.setAttribute('y', sy + 36)
-      warn.setAttribute('class', 'node-pub')
-      warn.setAttribute('fill', '#f44')
-      warn.textContent = 'LOW CONFIDENCE'
-      g.appendChild(warn)
-    }
-
-    svg.appendChild(g)
-  }
-
-  // Update stats
-  updateStats(positions)
-}
-
-function isStale(pub, now) {
-  for (const [key, pd] of Object.entries(pairData)) {
-    if (key.split('|').includes(pub) && (now - pd.lastSeen) < STALE_MS) return false
-  }
-  return true
-}
-
-function updateStats(positions) {
-  const pubs = new Set()
-  for (const key of Object.keys(pairData)) { const [a, b] = key.split('|'); pubs.add(a); pubs.add(b) }
-  document.getElementById('stats').innerHTML = [
-    `<span class="stat-label">attestations</span> <span class="stat-val">${totalAtts}</span>`,
-    `<span class="stat-label">nodes</span> <span class="stat-val">${pubs.size}</span>`,
-    `<span class="stat-label">positioned</span> <span class="stat-val">${positions.length}</span>`,
-    `<span class="stat-label">pairs</span> <span class="stat-val">${Object.keys(pairData).length}</span>`,
-  ].join('<br>')
-}
-
-// --- Feed ---
-const feedEl = document.getElementById('feed')
-
-function addFeedEntry(att) {
-  const ts = att.ts ? new Date(att.ts * 1000).toLocaleTimeString('en-GB', { hour12: false }) : 'mempool'
-  const div = document.createElement('div')
-  div.className = 'entry'
-  div.innerHTML = `<span class="ts">${ts}</span> <span class="obs">${att.observer.slice(0, 8)}</span><span class="arrow"> → </span><span class="peer">${att.peer.slice(0, 8)}</span> <span class="val">${att.method} ${att.value}</span> <a href="https://whatsonchain.com/tx/${att.txid}" target="_blank">${att.txid.slice(0, 10)}…</a>`
-  feedEl.insertBefore(div, feedEl.firstChild)
-  while (feedEl.children.length > FEED_MAX) feedEl.removeChild(feedEl.lastChild)
-}
-
-// --- Boot ---
-const statusEl = document.getElementById('status')
-
-// 1. Seed from REST
-fetch(API + '/recent?limit=200')
-  .then(r => r.json())
-  .then(d => {
-    // Ingest all (oldest first for correct sliding window)
-    const sorted = [...d.data].reverse()
-    for (const att of sorted) ingest(att)
-    // Feed (newest first)
-    for (const att of d.data.slice(0, 50)) addFeedEntry(att)
-    renderViz()
-    statusEl.textContent = `seeded ${d.data.length} attestations`
-  })
-  .catch(e => { statusEl.textContent = 'REST error: ' + e.message })
-
-// 2. Also fetch total count
-fetch(API + '/status')
-  .then(r => r.json())
-  .then(s => { totalAtts = s.attestations; renderViz() })
-  .catch(() => {})
-
-// 3. WebSocket for live
-function connectWS() {
-  const ws = new WebSocket(WS_URL)
-  ws.onopen = () => { statusEl.textContent = '● live'; statusEl.className = 'live' }
-  ws.onmessage = e => {
-    try {
-      const att = JSON.parse(e.data)
-      ingest(att)
-      addFeedEntry(att)
-      renderViz()
-    } catch (e) { console.error('WS message error:', e) }
-  }
-  ws.onclose = () => { statusEl.textContent = 'disconnected'; statusEl.className = ''; setTimeout(connectWS, 3000) }
+function connect() {
+  const ws = new WebSocket(API.replace(/^http/, 'ws'))
+  ws.onopen = () => { status.textContent = '● live'; status.className = 'live' }
+  ws.onmessage = e => { try { add(JSON.parse(e.data)) } catch (err) { console.error('WS:', err) } }
+  ws.onclose = () => { status.textContent = 'disconnected — reconnecting...'; status.className = ''; setTimeout(connect, 3000) }
   ws.onerror = () => ws.close()
 }
-connectWS()
+connect()
 </script>
 </body>
 </html>
