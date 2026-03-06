@@ -1,0 +1,9 @@
+{
+  "name": "locate1-dashboard",
+  "version": "1.0.0",
+  "description": "Real-time LOCATE1 positioning dashboard — reads attestations from the blockchain via the LOCATE1 indexer",
+  "main": "dashboard.cjs",
+  "scripts": {
+    "start": "node dashboard.cjs"
+  }
+}
