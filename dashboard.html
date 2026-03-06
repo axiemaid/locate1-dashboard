@@ -30,11 +30,17 @@ const API = (location.hostname === 'localhost' || location.hostname === '127.0.0
 const feed = document.getElementById('feed')
 const status = document.getElementById('status')
 
+function pubColor(pub) {
+  let h = 0
+  for (let i = 0; i < 8; i++) h = pub.charCodeAt(i) + ((h << 5) - h)
+  return `hsl(${((h % 360) + 360) % 360}, 80%, 60%)`
+}
+
 function add(att) {
   const ts = new Date().toLocaleTimeString('en-GB', { hour12: false })
   const d = document.createElement('div')
   d.className = 'e'
-  d.innerHTML = `<span class="t">${ts}</span> <span class="o">${att.observer.slice(0,8)}</span><span class="a"> → </span><span class="p">${att.peer.slice(0,8)}</span> <span class="v">${att.method} ${att.value}</span> <span class="x"><a href="https://whatsonchain.com/tx/${att.txid}" target="_blank">${att.txid.slice(0,10)}…</a></span>`
+  d.innerHTML = `<span class="t">${ts}</span> <span style="color:${pubColor(att.observer)}">${att.observer.slice(0,8)}</span><span class="a"> → </span><span style="color:${pubColor(att.peer)}">${att.peer.slice(0,8)}</span> <span class="v">${att.method} ${att.value}</span> <span class="x"><a href="https://whatsonchain.com/tx/${att.txid}" target="_blank">${att.txid.slice(0,10)}…</a></span>`
   feed.insertBefore(d, feed.firstChild)
   while (feed.children.length > 200) feed.removeChild(feed.lastChild)
 }
