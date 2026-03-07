@@ -76,10 +76,6 @@ function trimmedMean(vals) {
   return tr.reduce((a, b) => a + b, 0) / tr.length
 }
 
-function rssiToDist(rssi) {
-  return Math.pow(10, (-10 - rssi) / (10 * 2.5))
-}
-
 function isStale(pub) {
   const now = Date.now()
   for (const key in pairs) {
@@ -89,15 +85,16 @@ function isStale(pub) {
   return true
 }
 
-// --- Map: positioning ---
+// --- Map: positioning (iterative stress MDS) ---
 
 function recompute() {
-  const distMap = {}
+  // Build dissimilarity map from pairs
+  const dissim = {}
   const pubSet = new Set()
   for (const key in pairs) {
     const mean = trimmedMean(pairs[key].rssi)
     if (mean === null) continue
-    distMap[key] = rssiToDist(mean)
+    dissim[key] = Math.abs(mean)
     const [a, b] = key.split('|')
     pubSet.add(a)
     pubSet.add(b)
@@ -106,84 +103,43 @@ function recompute() {
   const pubs = [...pubSet]
   if (pubs.length < 2) return
 
-  function dist(a, b) {
-    const k = [a, b].sort().join('|')
-    return distMap[k]
-  }
-
-  let bestTri = null, bestScore = -1
-  for (let i = 0; i < pubs.length; i++) {
-    for (let j = i + 1; j < pubs.length; j++) {
-      for (let k = j + 1; k < pubs.length; k++) {
-        const dAB = dist(pubs[i], pubs[j])
-        const dAC = dist(pubs[i], pubs[k])
-        const dBC = dist(pubs[j], pubs[k])
-        if (dAB === undefined || dAC === undefined || dBC === undefined) continue
-        const kA = [pubs[i], pubs[j]].sort().join('|')
-        const kB = [pubs[i], pubs[k]].sort().join('|')
-        const kC = [pubs[j], pubs[k]].sort().join('|')
-        const score = (pairs[kA]?.rssi.length || 0) + (pairs[kB]?.rssi.length || 0) + (pairs[kC]?.rssi.length || 0)
-        if (score > bestScore) {
-          bestScore = score
-          bestTri = [pubs[i], pubs[j], pubs[k]]
-        }
-      }
-    }
-  }
-
   for (const k in positions) delete positions[k]
 
-  if (!bestTri) {
-    for (const key in distMap) {
-      const [a, b] = key.split('|')
-      positions[a] = { x: 0, y: 0, confidence: 1.0 }
-      positions[b] = { x: distMap[key], y: 0, confidence: 1.0 }
-      break
-    }
-    return
+  // Build pair list with target dissimilarities
+  const pairList = []
+  for (const key in dissim) {
+    const [a, b] = key.split('|')
+    const ai = pubs.indexOf(a), bi = pubs.indexOf(b)
+    pairList.push({ ai, bi, target: dissim[key] })
   }
 
-  const [A, B, C] = bestTri
-  const dAB = dist(A, B)
-  const dAC = dist(A, C)
-  const dBC = dist(B, C)
+  const n = pubs.length
 
-  positions[A] = { x: 0, y: 0, confidence: 1.0 }
-  positions[B] = { x: dAB, y: 0, confidence: 1.0 }
+  // Initialize positions: first node at origin, spread others
+  const coords = new Array(n)
+  for (let i = 0; i < n; i++) {
+    coords[i] = { x: Math.cos(2 * Math.PI * i / n) * 50, y: Math.sin(2 * Math.PI * i / n) * 50 }
+  }
 
-  const cx = (dAC * dAC - dBC * dBC + dAB * dAB) / (2 * dAB)
-  const cySquared = dAC * dAC - cx * cx
-  let cy, conf
-  if (cySquared > 0) { cy = Math.sqrt(cySquared); conf = 1.0 }
-  else { cy = dAB * 0.01; conf = 0.1 }
-  positions[C] = { x: cx, y: cy, confidence: conf }
-
-  for (const pub of pubs) {
-    if (positions[pub]) continue
-    const anchors = []
-    for (const placed in positions) {
-      const d = dist(pub, placed)
-      if (d !== undefined) anchors.push({ pub: placed, d })
+  // Iterative stress minimization — 500 iterations
+  for (let iter = 0; iter < 500; iter++) {
+    const lr = 0.05 / (1 + iter * 0.005)
+    for (const { ai, bi, target } of pairList) {
+      const dx = coords[ai].x - coords[bi].x
+      const dy = coords[ai].y - coords[bi].y
+      const curr = Math.sqrt(dx * dx + dy * dy) || 0.001
+      const err = (curr - target) / curr
+      const mx = dx * err * lr
+      const my = dy * err * lr
+      coords[ai].x -= mx
+      coords[ai].y -= my
+      coords[bi].x += mx
+      coords[bi].y += my
     }
-    if (anchors.length < 2) continue
-    let px = 0, py = 0
-    for (const a of anchors) { px += positions[a.pub].x; py += positions[a.pub].y }
-    px /= anchors.length; py /= anchors.length
-    for (let iter = 0; iter < 200; iter++) {
-      let gx = 0, gy = 0
-      for (const a of anchors) {
-        const dx = px - positions[a.pub].x
-        const dy = py - positions[a.pub].y
-        const curr = Math.sqrt(dx * dx + dy * dy) || 0.001
-        const err = curr - a.d
-        gx += err * dx / curr
-        gy += err * dy / curr
-      }
-      const lr = 0.1 / (1 + iter * 0.01)
-      px -= lr * gx
-      py -= lr * gy
-    }
-    positions[pub] = { x: px, y: py, confidence: 1.0 }
+  }
+
+  for (let i = 0; i < n; i++) {
+    positions[pubs[i]] = { x: coords[i].x, y: coords[i].y }
   }
 }
 
@@ -244,13 +200,8 @@ function renderMap() {
     html += `<circle cx="${cx}" cy="${cy}" r="6" fill="${col}" opacity="${opacity}"/>`
     html += `<text x="${cx}" y="${cy - 16}" text-anchor="middle" fill="${col}" font-size="14" font-family="SF Mono,monospace" opacity="${opacity}">${NODE_LABELS[pub] || pub.slice(0, 8)}</text>`
     html += `<text x="${cx}" y="${cy + 22}" text-anchor="middle" fill="#555" font-size="10" font-family="SF Mono,monospace" opacity="${opacity}">${pub.slice(0, 8)}…${pub.slice(-6)}</text>`
-    let nextY = 36
-    if (pos.confidence < 1.0) {
-      html += `<text x="${cx}" y="${cy + nextY}" text-anchor="middle" fill="#f44" font-size="10" font-family="SF Mono,monospace" opacity="${opacity}">LOW CONFIDENCE</text>`
-      nextY += 14
-    }
     if (stale) {
-      html += `<text x="${cx}" y="${cy + nextY}" text-anchor="middle" fill="#666" font-size="10" font-family="SF Mono,monospace">stale</text>`
+      html += `<text x="${cx}" y="${cy + 36}" text-anchor="middle" fill="#666" font-size="10" font-family="SF Mono,monospace">stale</text>`
     }
   }
 
