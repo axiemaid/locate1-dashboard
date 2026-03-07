@@ -103,8 +103,6 @@ function recompute() {
   const pubs = [...pubSet]
   if (pubs.length < 2) return
 
-  for (const k in positions) delete positions[k]
-
   // Build pair list with target dissimilarities
   const pairList = []
   for (const key in dissim) {
@@ -115,10 +113,15 @@ function recompute() {
 
   const n = pubs.length
 
-  // Initialize positions: first node at origin, spread others
+  // Seed from previous positions; circular fallback for new nodes
   const coords = new Array(n)
   for (let i = 0; i < n; i++) {
-    coords[i] = { x: Math.cos(2 * Math.PI * i / n) * 50, y: Math.sin(2 * Math.PI * i / n) * 50 }
+    const prev = positions[pubs[i]]
+    if (prev) {
+      coords[i] = { x: prev.x, y: prev.y }
+    } else {
+      coords[i] = { x: Math.cos(2 * Math.PI * i / n) * 50, y: Math.sin(2 * Math.PI * i / n) * 50 }
+    }
   }
 
   // Iterative stress minimization — 500 iterations
@@ -138,6 +141,7 @@ function recompute() {
     }
   }
 
+  for (const k in positions) delete positions[k]
   for (let i = 0; i < n; i++) {
     positions[pubs[i]] = { x: coords[i].x, y: coords[i].y }
   }
