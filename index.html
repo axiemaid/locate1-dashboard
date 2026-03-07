@@ -48,10 +48,23 @@ const positions = {}
 
 // --- Shared ---
 
+const NODE_PALETTE = [
+  '#00ffcc', // cyan/teal
+  '#ff3388', // hot pink
+  '#7744ff', // purple
+  '#ff8800', // orange
+  '#00ff44', // green
+  '#ff4444', // red
+  '#44bbff', // sky blue
+]
+const pubColorMap = {}
+let nextColor = 0
 function pubColor(pub) {
-  let h = 0
-  for (let i = 0; i < 8; i++) h = pub.charCodeAt(i) + ((h << 5) - h)
-  return `hsl(${((h % 360) + 360) % 360}, 80%, 60%)`
+  if (!pubColorMap[pub]) {
+    pubColorMap[pub] = NODE_PALETTE[nextColor % NODE_PALETTE.length]
+    nextColor++
+  }
+  return pubColorMap[pub]
 }
 
 // --- Feed ---
