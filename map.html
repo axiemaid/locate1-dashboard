@@ -216,17 +216,18 @@ function render() {
     const stale = isStale(pub)
     const cx = tx(pos.x), cy = ty(pos.y)
     const col = pubColor(pub)
-    const label = NODE_LABELS[pub] || pub.slice(0, 8)
     const opacity = stale ? 0.3 : 1.0
 
     html += `<circle cx="${cx}" cy="${cy}" r="6" fill="${col}" opacity="${opacity}"/>`
-    html += `<text x="${cx}" y="${cy - 14}" text-anchor="middle" fill="${col}" font-size="14" font-family="SF Mono,monospace" opacity="${opacity}">${label}</text>`
+    html += `<text x="${cx}" y="${cy - 16}" text-anchor="middle" fill="${col}" font-size="14" font-family="SF Mono,monospace" opacity="${opacity}">${pub.slice(0, 8)}</text>`
+    html += `<text x="${cx}" y="${cy + 22}" text-anchor="middle" fill="#555" font-size="10" font-family="SF Mono,monospace" opacity="${opacity}">${pub.slice(0, 8)}…${pub.slice(-6)}</text>`
+    let nextY = 36
     if (pos.confidence < 1.0) {
-      html += `<text x="${cx}" y="${cy + 22}" text-anchor="middle" fill="#f44" font-size="10" font-family="SF Mono,monospace" opacity="${opacity}">LOW CONFIDENCE</text>`
+      html += `<text x="${cx}" y="${cy + nextY}" text-anchor="middle" fill="#f44" font-size="10" font-family="SF Mono,monospace" opacity="${opacity}">LOW CONFIDENCE</text>`
+      nextY += 14
     }
     if (stale) {
-      const staleY = pos.confidence < 1.0 ? 36 : 22
-      html += `<text x="${cx}" y="${cy + staleY}" text-anchor="middle" fill="#666" font-size="10" font-family="SF Mono,monospace">stale</text>`
+      html += `<text x="${cx}" y="${cy + nextY}" text-anchor="middle" fill="#666" font-size="10" font-family="SF Mono,monospace">stale</text>`
     }
   }
 
