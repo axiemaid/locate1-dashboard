@@ -20,6 +20,14 @@ const API = (location.hostname === 'localhost' || location.hostname === '127.0.0
 const svg = document.getElementById('map')
 const statusEl = document.getElementById('status')
 
+const NODE_LABELS = {
+  '0303339885d442d21a9642057315827d02275da49e53e36c5882038a8010f06023': 'Node A',
+  '0219e01ef3e945e3cfe6ad6516059ef5454e12ca72454d2f67c6346202f77f9a7f': 'Node B',
+  '03a00f7cad1d90d958d9173d09af24d4f6458e7ea97253d77ca7cf6603d9a1f5ad': 'Node C',
+}
+
+const STALE_MS = 300000 // 5 minutes
+
 const pairs = {}
 const positions = {}
 
@@ -40,6 +48,15 @@ function trimmedMean(vals) {
 
 function rssiToDist(rssi) {
   return Math.pow(10, (-10 - rssi) / (10 * 2.5))
+}
+
+function isStale(pub) {
+  const now = Date.now()
+  for (const key in pairs) {
+    if (!key.includes(pub)) continue
+    if (now - pairs[key].lastSeen < STALE_MS) return false
+  }
+  return true
 }
 
 function recompute() {
@@ -151,12 +168,15 @@ function recompute() {
 
 function render() {
   const pubs = Object.keys(positions)
-  if (!pubs.length) { svg.innerHTML = ''; return }
-
   const W = svg.clientWidth || window.innerWidth
   const H = svg.clientHeight || (window.innerHeight - 40)
-  const pad = 100
 
+  if (!pubs.length) {
+    svg.innerHTML = `<text x="${W / 2}" y="${H / 2}" text-anchor="middle" fill="#444" font-size="14" font-family="SF Mono,monospace">waiting for attestations...</text>`
+    return
+  }
+
+  const pad = 100
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
   for (const p of pubs) {
     const pos = positions[p]
@@ -181,23 +201,32 @@ function render() {
     if (!positions[a] || !positions[b]) continue
     const mean = trimmedMean(pairs[key].rssi)
     if (mean === null) continue
+    const stale = Date.now() - pairs[key].lastSeen > STALE_MS
     const x1 = tx(positions[a].x), y1 = ty(positions[a].y)
     const x2 = tx(positions[b].x), y2 = ty(positions[b].y)
     const mx = (x1 + x2) / 2, my = (y1 + y2) / 2
-    html += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="rgba(255,255,255,0.15)" stroke-width="1"/>`
-    html += `<text x="${mx}" y="${my - 6}" text-anchor="middle" fill="#444" font-size="11" font-family="SF Mono,monospace">${Math.round(mean)} dBm</text>`
+    const edgeAlpha = stale ? 0.05 : 0.15
+    html += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="rgba(255,255,255,${edgeAlpha})" stroke-width="1"/>`
+    html += `<text x="${mx}" y="${my - 6}" text-anchor="middle" fill="${stale ? '#2a2a2a' : '#444'}" font-size="11" font-family="SF Mono,monospace">${Math.round(mean)} dBm</text>`
   }
 
   // Nodes
   for (const pub of pubs) {
     const pos = positions[pub]
+    const stale = isStale(pub)
     const cx = tx(pos.x), cy = ty(pos.y)
     const col = pubColor(pub)
-    html += `<circle cx="${cx}" cy="${cy}" r="6" fill="${col}"/>`
-    html += `<text x="${cx}" y="${cy - 16}" text-anchor="middle" fill="${col}" font-size="14" font-family="SF Mono,monospace">${pub.slice(0, 8)}</text>`
-    html += `<text x="${cx}" y="${cy + 22}" text-anchor="middle" fill="#555" font-size="10" font-family="SF Mono,monospace">${pub.slice(0, 8)}…${pub.slice(-6)}</text>`
+    const label = NODE_LABELS[pub] || pub.slice(0, 8)
+    const opacity = stale ? 0.3 : 1.0
+
+    html += `<circle cx="${cx}" cy="${cy}" r="6" fill="${col}" opacity="${opacity}"/>`
+    html += `<text x="${cx}" y="${cy - 14}" text-anchor="middle" fill="${col}" font-size="14" font-family="SF Mono,monospace" opacity="${opacity}">${label}</text>`
     if (pos.confidence < 1.0) {
-      html += `<text x="${cx}" y="${cy + 36}" text-anchor="middle" fill="#f44" font-size="10" font-family="SF Mono,monospace">LOW CONFIDENCE</text>`
+      html += `<text x="${cx}" y="${cy + 22}" text-anchor="middle" fill="#f44" font-size="10" font-family="SF Mono,monospace" opacity="${opacity}">LOW CONFIDENCE</text>`
+    }
+    if (stale) {
+      const staleY = pos.confidence < 1.0 ? 36 : 22
+      html += `<text x="${cx}" y="${cy + staleY}" text-anchor="middle" fill="#666" font-size="10" font-family="SF Mono,monospace">stale</text>`
     }
   }
 
@@ -227,6 +256,7 @@ function connect() {
 }
 
 window.addEventListener('resize', render)
+render() // show "waiting" state immediately
 connect()
 </script>
 </body>
