@@ -237,7 +237,7 @@ function connect() {
     const key = [att.observer, att.peer].sort().join('|')
     if (!pairs[key]) pairs[key] = { rssi: [], lastSeen: 0 }
     pairs[key].rssi.push(att.value)
-    if (pairs[key].rssi.length > 30) pairs[key].rssi.shift()
+    if (pairs[key].rssi.length > 10) pairs[key].rssi.shift()
     pairs[key].lastSeen = Date.now()
     recompute()
     renderMap()
