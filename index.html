@@ -35,6 +35,12 @@ const svg = document.getElementById('map')
 const feed = document.getElementById('feed')
 const statusEl = document.getElementById('status')
 
+const NODE_LABELS = {
+  '0303339885d442d21a9642057315827d02275da49e53e36c5882038a8010f06023': 'Node A',
+  '03a00f7cad1d90d958d9173d09af24d4f6458e7ea97253d77ca7cf6603d9a1f5ad': 'Node B',
+  '0219e01ef3e945e3cfe6ad6516059ef5454e12ca72454d2f67c6346202f77f9a7f': 'Node C',
+}
+
 const STALE_MS = 300000
 
 const pairs = {}
@@ -236,7 +242,7 @@ function renderMap() {
     const opacity = stale ? 0.3 : 1.0
 
     html += `<circle cx="${cx}" cy="${cy}" r="6" fill="${col}" opacity="${opacity}"/>`
-    html += `<text x="${cx}" y="${cy - 16}" text-anchor="middle" fill="${col}" font-size="14" font-family="SF Mono,monospace" opacity="${opacity}">${pub.slice(0, 8)}</text>`
+    html += `<text x="${cx}" y="${cy - 16}" text-anchor="middle" fill="${col}" font-size="14" font-family="SF Mono,monospace" opacity="${opacity}">${NODE_LABELS[pub] || pub.slice(0, 8)}</text>`
     html += `<text x="${cx}" y="${cy + 22}" text-anchor="middle" fill="#555" font-size="10" font-family="SF Mono,monospace" opacity="${opacity}">${pub.slice(0, 8)}…${pub.slice(-6)}</text>`
     let nextY = 36
     if (pos.confidence < 1.0) {
